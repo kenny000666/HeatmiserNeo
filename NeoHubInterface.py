@@ -282,20 +282,21 @@ def main(argv):
             try:
                 NeoStat.update()
                 time.sleep(updateInterval)
-                url = "https://"+domoticz+"/json.htm?type=command&param=udevice&idx="+str(tempidx)+"&nvalue=0&svalue="+str(NeoStat.current_temperature)
-                log.info("Setting Temperature for sensor " + str(tempidx) + ": " + url)
-                urlopen(url)
+                url = "http://"+domoticz+"/json.htm?type=command&param=udevice&idx="+str(tempidx)+"&nvalue=0&svalue="+str(NeoStat.current_temperature)
+                urllib2.urlopen(url)
+                log.info("Temperature updated: " + url)
                 switchUrl = "http://"+domoticz+"/json.htm?type=devices&rid="+switchidx
-                status = json.load(urlopen(switchUrl))['result'][0]['Status']
+                log.debug("SwitchURL: " + switchUrl)
+                status = json.load(urllib2.urlopen(switchUrl))['result'][0]['Status']
                 log.debug("Switch Status: " + status + " - NeoStat Status: " + NeoStat.operation)
                 if (status == "Off" and NeoStat.operation == "Heating"):
                     switchOnUrl = "http://"+domoticz+"/json.htm?type=command&param=switchlight&idx="+str(switchidx)+"&switchcmd=On"
                     log.info("Turn Switch " + str(switchidx) + " On")
-                    urlopen(switchOnUrl)
+                    urllib2.urlopen(switchOnUrl)
                 elif (status == "On" and NeoStat.operation == "Idle"):
                     switchOffUrl = "http://"+domoticz+"/json.htm?type=command&param=switchlight&idx="+str(switchidx)+"&switchcmd=Off"
                     log.info("Turn Switch " + str(switchidx) + " Off")
-                    urlopen(switchOffUrl)
+                    urllib2.urlopen(switchOffUrl)
                 if (updateInterval == 0):
                     break
             except socket.timeout, e:
