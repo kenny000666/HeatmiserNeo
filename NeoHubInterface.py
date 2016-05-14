@@ -289,7 +289,7 @@ def updateMqtt(NeoStat, updateInterval):
         time.sleep(updateInterval)
 
         msgs = [{"topic": topic + NeoStat.name, "payload": """{ "temperature" : """ + str(NeoStat.current_temperature)
-        + """, "status" : """ + NeoStat.operation + "\"" "  "
+        + """, "status" : """ + "\"" + NeoStat.operation + "\"" "  "
         + "}", "qos": qos, "retain": retain}]
 
         log.debug("msgs = " + str(msgs))
