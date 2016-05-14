@@ -6,12 +6,15 @@ import sys
 import getopt
 import time
 import urllib2
+import paho.mqtt.publish as publish
+from ConfigParser import SafeConfigParser
+import os
 
 log = None
 
 def initLogger(name):
     global log
-    logging.basicConfig(filename="NeohubInterface"+name+".log", level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(filename=os.path.dirname(os.path.realpath(__file__)) +"NeohubInterface"+name+".log", level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger(__name__)
     soh = logging.StreamHandler(sys.stdout)
     soh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
@@ -187,6 +190,7 @@ class HeatmiserNeostat:
         try:
             sock.connect((self._host, self._port))
         except OSError:
+            log.error("Error connecting to Neohub")
             sock.close()
             return False
 
@@ -202,6 +206,7 @@ class HeatmiserNeostat:
             buf = sock.recv(4096)
         except socket.timeout:
             # something is wrong, assume it's offline
+            log.error("Timeout error")
             sock.close()
             return False
 
@@ -230,15 +235,72 @@ class HeatmiserNeostat:
 
         return json.loads(response, strict=False)
 
+def updateDomoticzHttp(domoticzUrl, switchidx, tempidx, NeoStat, updateInterval):
+    while True:
+        NeoStat.update()
+        time.sleep(updateInterval)
+        try:
+            url = domoticzUrl + "/json.htm?type=command&param=udevice&idx=" + str(tempidx) + "&nvalue=0&svalue=" + str(
+                NeoStat.current_temperature)
+            urllib2.urlopen(url)
+            log.info("Temperature updated: " + url)
+            switchUrl = domoticzUrl + "/json.htm?type=devices&rid=" + switchidx
+            log.debug("SwitchURL: " + switchUrl)
+            status = json.load(urllib2.urlopen(switchUrl))['result'][0]['Status']
+            log.debug("Switch Status: " + status + " - NeoStat Status: " + NeoStat.operation)
+            if status == "Off" and NeoStat.operation == "Heating":
+                switchOnUrl = domoticzUrl + "/json.htm?type=command&param=switchlight&idx=" + str(switchidx) + "&switchcmd=On"
+                log.info("Turn Switch " + str(switchidx) + " On")
+                urllib2.urlopen(switchOnUrl)
+            elif status == "On" and NeoStat.operation == "Idle":
+                switchOffUrl = domoticzUrl + "/json.htm?type=command&param=switchlight&idx=" + str(
+                    switchidx) + "&switchcmd=Off"
+                log.info("Turn Switch " + str(switchidx) + " Off")
+                urllib2.urlopen(switchOffUrl)
+            if (updateInterval == 0):
+                break
+        except socket.timeout, e:
+            log.error("Timeout error occurred retrieving NeoStat data...")
+        except urllib2.HTTPError, e:
+            log.error("HTTP error - " + e)
+        except urllib2.URLError, e:
+            log.error("URL Error - " + e)
+        except:
+            log.error("Error Occurred...")
+
+def updateMqtt(NeoStat, updateInterval):
+    cfg = SafeConfigParser()
+    cfg.optionxform = str
+    cfg.read(os.path.dirname(os.path.realpath(__file__)) + "\\neohub.conf")
+    host = cfg.get("mqtt", "hostname")
+    port = eval(cfg.get("mqtt", "port"))
+    topic = cfg.get("mqtt", "topic")
+    qos = eval(cfg.get("mqtt", "qos"))
+    retain = eval(cfg.get("mqtt", "retain"))
+    client_id =  "neohub" + NeoStat.name  + str(os.getpid())
+    if eval(cfg.get("mqtt", "auth")):
+        auth = {"username": cfg.get("mqtt", "user"), "password": cfg.get("mqtt", "password")}
+    else:
+        auth = None
+
+    while True:
+        NeoStat.update()
+        time.sleep(updateInterval)
+
+        msgs = [{"topic": topic + NeoStat.name, "payload": """{ "temperature" : """ + str(NeoStat.current_temperature)
+        + """, "status" : """ + NeoStat.operation + "\"" "  "
+        + "}", "qos": qos, "retain": retain}]
+
+        log.debug("msgs = " + str(msgs))
+
+        publish.multiple(msgs, hostname=host, port=port, client_id=client_id, auth=auth)
 
 
 def main(argv):
-
-
     try:
-        opts, args = getopt.getopt(argv, "hsfni:", ["StatName=", "Host=", "Port=", "Domoticz=", "TempIDX=", "SwitchIDX="])
+        opts, args = getopt.getopt(argv, "hsfi:", ["StatName=", "Mode=", "TempIDX", "SwitchIDX"])
     except getopt.GetoptError:
-        print("NeoHubInterface.py -h -s -f -n -i <update interval> --StatName --Host --Port --Domoticz --TempIDX --SwitchIDX")
+        print("NeoHubInterface.py -h -s -f -i --StatName --Mode --TempIDX --SwitchIDX")
         sys.exit(1)
 
     updateMode = True
@@ -246,28 +308,30 @@ def main(argv):
 
     for opt, arg in opts:
         if opt in '-h':
-            print("NeoHubInterface.py -h -s -f -n -i <update interval> --StatName --Host --Port --Domoticz --TempIDX --SwitchIDX")
+            print("NeoHubInterface.py -h -s -f -i --StatName --Mode --TempIDX --SwitchIDX")
             sys.exit(2)
         elif (opt == "--StatName"):
             statName = arg
-        elif (opt == "--Host"):
-            host = arg
-        elif (opt == "--Port"):
-            port = arg
-        elif (opt == "--Domoticz"):
-            domoticz = arg
         elif (opt == "--TempIDX"):
             tempidx = int(arg)
         elif (opt == "--SwitchIDX"):
             switchidx = arg
+        elif (opt == "--Mode"):
+            mode = arg
         elif (opt == "-i"):
             updateInterval = float(arg)
         elif (opt == "-s"):
             updateMode = False
         elif (opt == "-f"):
             away = True
-        elif (opt == "-n"):
-            away = False
+
+    cfg = SafeConfigParser()
+    cfg.optionxform = str
+    filepath = os.path.dirname(os.path.realpath(__file__)) + "\\"
+    cfg.read(filepath + "neohub.conf")
+    host = cfg.get("neohub", "host")
+    port = cfg.get("neohub", "port")
+    domoticz = cfg.get("domoticz", "url")
 
     initLogger(statName)
 
@@ -275,38 +339,16 @@ def main(argv):
 
     NeoStat = HeatmiserNeostat(host, int(port), statName)
 
-
-
     if updateMode:
-        while True:
-            try:
-                NeoStat.update()
-                time.sleep(updateInterval)
-                url = "http://"+domoticz+"/json.htm?type=command&param=udevice&idx="+str(tempidx)+"&nvalue=0&svalue="+str(NeoStat.current_temperature)
-                urllib2.urlopen(url)
-                log.info("Temperature updated: " + url)
-                switchUrl = "http://"+domoticz+"/json.htm?type=devices&rid="+switchidx
-                log.debug("SwitchURL: " + switchUrl)
-                status = json.load(urllib2.urlopen(switchUrl))['result'][0]['Status']
-                log.debug("Switch Status: " + status + " - NeoStat Status: " + NeoStat.operation)
-                if (status == "Off" and NeoStat.operation == "Heating"):
-                    switchOnUrl = "http://"+domoticz+"/json.htm?type=command&param=switchlight&idx="+str(switchidx)+"&switchcmd=On"
-                    log.info("Turn Switch " + str(switchidx) + " On")
-                    urllib2.urlopen(switchOnUrl)
-                elif (status == "On" and NeoStat.operation == "Idle"):
-                    switchOffUrl = "http://"+domoticz+"/json.htm?type=command&param=switchlight&idx="+str(switchidx)+"&switchcmd=Off"
-                    log.info("Turn Switch " + str(switchidx) + " Off")
-                    urllib2.urlopen(switchOffUrl)
-                if (updateInterval == 0):
-                    break
-            except socket.timeout, e:
-                log.error("Timeout error occurred retrieving NeoStat data...")
-            except urllib2.HTTPError, e:
-                log.error("HTTP error - " + e)
-            except urllib2.URLError, e:
-                log.error("URL Error - " + e)
-            except:
-                log.error("Error Occurred...")
+        if mode == "http":
+            log.debug("HTTP Mode")
+            updateDomoticzHttp(domoticz, switchidx, tempidx, NeoStat, updateInterval)
+        elif mode == "mqtt":
+            log.debug("MQTT Mode")
+            updateMqtt(NeoStat, updateInterval)
+        else:
+            log.warning("No Update Mode selected")
+
     elif not updateMode:
         if (not away):
             NeoStat.turn_frost_mode_off()
