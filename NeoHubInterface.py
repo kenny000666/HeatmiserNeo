@@ -15,7 +15,7 @@ log = None
 
 def initLogger(name):
     global log
-    logging.basicConfig(filename=os.path.dirname(os.path.realpath(__file__)) +"NeohubInterface"+name+".log", level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(filename=os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/NeohubInterface" + name + ".log"), level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger(__name__)
     soh = logging.StreamHandler(sys.stdout)
     soh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
@@ -272,7 +272,7 @@ def updateDomoticzHttp(domoticzUrl, switchidx, tempidx, NeoStat, updateInterval)
 def updateMqtt(NeoStat, updateInterval):
     cfg = SafeConfigParser()
     cfg.optionxform = str
-    cfg.read(os.path.dirname(os.path.realpath(__file__)) + "\\neohub.conf")
+    cfg.read(os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/neohub.conf"))
     host = cfg.get("mqtt", "hostname")
     port = eval(cfg.get("mqtt", "port"))
     topic = cfg.get("mqtt", "topic")
@@ -328,8 +328,7 @@ def main(argv):
 
     cfg = SafeConfigParser()
     cfg.optionxform = str
-    filepath = os.path.dirname(os.path.realpath(__file__)) + "\\"
-    cfg.read(filepath + "neohub.conf")
+    cfg.read(os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/neohub.conf"))
     host = cfg.get("neohub", "host")
     port = cfg.get("neohub", "port")
     domoticz = cfg.get("domoticz", "url")
