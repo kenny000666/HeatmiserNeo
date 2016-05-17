@@ -293,9 +293,10 @@ def updateMqtt(NeoStat, updateInterval):
         + "}", "qos": qos, "retain": retain}]
 
         log.debug("msgs = " + str(msgs))
-
-        publish.multiple(msgs, hostname=host, port=port, client_id=client_id, auth=auth)
-
+        try:
+            publish.multiple(msgs, hostname=host, port=port, client_id=client_id, auth=auth)
+        except:
+            log.error("Unable to publish message", msgs)
 
 def main(argv):
     try:
