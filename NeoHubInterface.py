@@ -285,18 +285,19 @@ def updateMqtt(NeoStat, updateInterval):
         auth = None
 
     while True:
-        NeoStat.update()
-        time.sleep(updateInterval)
-
-        msgs = [{"topic": topic + NeoStat.name, "payload": """{ "temperature" : """ + str(NeoStat.current_temperature)
-        + """, "status" : """ + "\"" + NeoStat.operation + "\"" "  "
-        + "}", "qos": qos, "retain": retain}]
-
-        log.debug("msgs = " + str(msgs))
         try:
+            NeoStat.update()
+            time.sleep(updateInterval)
+
+            msgs = [{"topic": topic + NeoStat.name, "payload": """{ "temperature" : """ + str(NeoStat.current_temperature)
+            + """, "status" : """ + "\"" + NeoStat.operation + "\"" "  "
+            + "}", "qos": qos, "retain": retain}]
+
+            log.debug("msgs = " + str(msgs))
+
             publish.multiple(msgs, hostname=host, port=port, client_id=client_id, auth=auth)
         except:
-            log.error("Unable to publish message", msgs)
+            log.error("Unable to publish message")
 
 def main(argv):
     try:
